@@ -1,0 +1,177 @@
+---
+title: "Homework 1"
+output: html_notebook
+---
+
+#Using the data called "earningsCalls.RData" in the data folder, explore the text for each call (e.g., find common words or n-grams). Perform any necessary text cleaning and conduct sentiment analysis.
+
+#After conducting your sentiment analysis, use the iextrading.com API (no key required) or the alphavantage.com API (key required) to pull stock prices for 10 days surrounding the call date. 
+
+#Explore if any relationships exist between various text features and stock prices?
+
+
+#import data
+```{r}
+library(rvest)
+library(dplyr)
+library(tidytext)
+library(stringr)
+library(wordcloud2)
+library(sentimentr)
+library(lexicon)
+library(magrittr)
+
+
+load("R/earningsCalls.RData")
+call_1 = earningsCalls[[1]]
+call_2 = earningsCalls[[2]]
+call_3 = earningsCalls[[3]]
+call_4 = earningsCalls[[4]]
+
+
+```
+
+
+#explore text (find common words (ngrams))
+```{r}
+call_1$text
+bigrams_1 =  call_1 %>% 
+  unnest_tokens(., ngrams, text, token = "ngrams", n = 3) %>% 
+  tidyr::separate(ngrams, c("word1", "word2","word3"), sep = "\\s") %>% 
+  count(word1, word2, word3, sort = TRUE)
+rmarkdown::paged_table(bigrams_1)
+#common forward looking theme "the second half"
+
+call_2$text
+bigrams_2 =  call_2 %>% 
+  unnest_tokens(., ngrams, text, token = "ngrams", n = 3) %>% 
+  tidyr::separate(ngrams, c("word1", "word2","word3"), sep = "\\s") %>% 
+  count(word1, word2, word3, sort = TRUE)
+rmarkdown::paged_table(bigrams_2)
+#common looking at past quarter and next quarter
+
+call_3$text
+bigrams_3 =  call_3 %>% 
+  unnest_tokens(., ngrams, text, token = "ngrams", n = 3) %>% 
+  tidyr::separate(ngrams, c("word1", "word2","word3"), sep = "\\s") %>% 
+  count(word1, word2, word3, sort = TRUE)
+rmarkdown::paged_table(bigrams_3)
+# common "as well as" as well as forward and backward looking statements
+
+call_4$text
+bigrams_4 =  call_4 %>% 
+  unnest_tokens(., ngrams, text, token = "ngrams", n = 3) %>% 
+  tidyr::separate(ngrams, c("word1", "word2","word3"), sep = "\\s") %>% 
+  count(word1, word2, word3, sort = TRUE)
+rmarkdown::paged_table(bigrams_4)
+#common "as well as" as well as looking at past quarter and next quarter
+
+
+
+call_1 %>%
+  unnest_tokens(output = word, input = text) %>% 
+  anti_join(stop_words) %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n > 10) %>% 
+  na.omit() %>% 
+  wordcloud2(shape = "cardioid")
+
+
+```
+
+
+#clean data and perform sentiment analysis
+```{r}
+
+combinedcalls = rbind(call_1, call_2, call_3, call_4)
+colnames(combinedcalls)
+combinedcalls
+
+cleanedcalls <- combinedcalls %>% 
+  dplyr::select(text, ticker, date, quarter) %>% 
+  mutate(text = as.character(text), 
+         text = str_replace_all(text, "\n", " "),   
+         text = str_replace_all(text, "(\\[.*?\\])", ""),
+         text = str_squish(text), 
+         text = gsub("([a-z])([A-Z])", "\\1 \\2", text), 
+         text = tolower(text), 
+         text = removeWords(text, c("'", stopwords(kind = "en"))), 
+         text = removePunctuation(text), 
+         text = removeNumbers(text),
+         text = lemmatize_strings(text),
+         call_id = paste(ticker, quarter, "")) %>% 
+  select(ticker, quarter, date, text, call_id)
+
+cleanedcalls
+
+
+#sentiment analysis
+
+cleanedcalls = cleanedcalls %>% 
+  mutate(reviewID = 1:nrow(.)) # Just adding a reviewer id to the data.
+
+callSentiment = sentiment(get_sentences(cleanedcalls$text), 
+          polarity_dt = hash_sentiment_jockers)
+
+reviewSentiment = callSentiment %>% 
+  group_by(element_id) %>% 
+  summarize(meanSentiment = mean(sentiment))
+
+cleanedcalls = left_join(cleanedcalls, reviewSentiment, by = c("reviewID" = "element_id"))
+
+cleanedcalls[which.max(cleanedcalls$wordCount), ]
+
+### cleanedcalls %>% 
+  ###group_by(call_id) %>% 
+  ###summarize(meanRating = mean(ratings), 
+  ###          meanSentiment = mean(meanSentiment))
+
+library(DT)
+
+sentimentBreaks = c(-.5, 0, .5)
+
+breakColors = c('rgb(178,24,43)', 'rgb(239,138,98)', 'rgb(103,169,207)', 'rgb(33,102,172)')
+
+datatable(allReviews, rownames = FALSE) %>% 
+  formatStyle("reviews", "meanSentiment", backgroundColor = styleInterval(sentimentBreaks, breakColors))
+
+
+library(ggplot2)
+
+ggplot(allReviews, aes(ratings, meanSentiment, color = restaurant)) +
+  geom_point() +
+  theme_minimal()
+
+
+ggplot(allReviews, aes(wordCount, meanSentiment, color = restaurant)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal()
+
+
+
+```
+
+
+#use the iextrading.com API (no key required) or the alphavantage.com API (key required) to pull stock prices for 10 days surrounding the call date
+```{r}
+unique(cleanedcalls$date)
+
+pbcq4 <- GET("https://api.iextrading.com/1.0/stock/pbc/chart/date/20051020")
+
+jsonlite::fromJSON(httr::content(pbcq4,as="text"))
+
+
+
+```
+
+
+#see if relationship exists between text features and stock price
+```{r}
+
+
+```
+
+
+
+

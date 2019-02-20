@@ -1,0 +1,159 @@
+---
+title: "Homework 2"
+output: html_document
+---
+
+#Using the attached GlassDoor review data, perform sentiment analyses and topic models for the reviews. 
+
+#The reviews are broken into 3 separate parts: pros, cons, and advice. You can choose to perform your analyses on any of these pieces (or combine them in any way you wish). 
+
+#While the text is generally clean, you will find where some words have ran together -- we have seen the fix for this before.
+
+
+```{r setup, include=FALSE}
+library(rvest)
+library(stringr)
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(stringr)
+library(tm)
+library(textstem)
+
+
+load("R/glassDoor.RData")
+
+colnames(glassDoor)
+unique(glassDoor$rating)
+
+```
+
+#fix words that have run together
+
+```{r setup, include=FALSE}
+cleanglassDoor = glassDoor%>%
+  dplyr::select(pros, rating, organization) %>%
+  mutate(text = as.character(pros), 
+         text = str_replace_all(text, "\n", " "),   
+         text = str_replace_all(text, "(\\[.*?\\])", ""),
+         text = str_squish(text), 
+         text = gsub("([a-z])([A-Z])", "\\1 \\2", text), 
+         text = tolower(text), 
+         text = removeWords(text, c("'", stopwords(kind = "en"))), 
+         text = removePunctuation(text), 
+         text = removeNumbers(text),
+         text = lemmatize_strings(text), 
+         rating = as.integer(rating), 
+         organization = as.character(organization)) %>% 
+  select(organization, text, rating)
+
+lyricsCorpus = Corpus(DataframeSource(cleanglassDoor))
+
+lyricsCorpus[[1]][[2]]
+```
+
+#sentiment analysis
+
+```{r setup, include=FALSE}
+
+```
+
+#topic models
+
+```{r setup, include=FALSE}
+
+```
+
+```{r setup, include=FALSE}
+apiKey = "8my5DQcAI1nxMW7oMTyZd-NIFHFQElynCZ35OWJSBMihg0YPJQfYxDUrK_2kx1qxdTWMneXwLOvYgkAbHpzIVXRsxXyLlnFA2gLACOBz9BsdCdowYo5rnZVp3khHXHYx"
+
+thaiSearch = GET("https://api.yelp.com/v3/businesses/search?term=cambodian+thai&location=south+bend&limit=2",
+                 add_headers(Authorization = paste("Bearer", apiKey, sep = " ")))
+
+searchParsed = jsonlite::fromJSON((content(thaiSearch, as = "text")))
+
+###
+View(searchParsed$businesses)
+
+thaiResults = searchParsed$businesses[1, ]
+
+###
+thaiID = paste("https://api.yelp.com/v3/businesses/", thaiResults$id, sep = "")
+
+cambodianThai = GET(thaiID,
+    add_headers(Authorization = paste("Bearer", apiKey, sep = " ")))
+
+thaiParsed = jsonlite::fromJSON(content(cambodianThai, as = "text"))
+
+###
+library(rvest)
+
+cambodianThai = "https://www.yelp.com/biz/cambodian-thai-south-bend"
+
+cambodianThaiHTML = read_html(cambodianThai)
+
+cambodianThaiHTML %>% 
+  html_nodes(".arrange_unit.page-option")
+
+thaiParsed$coordinates
+
+ctRatings = cambodianThaiHTML %>% 
+  html_nodes(".review-wrapper .review-content .i-stars") %>% 
+  html_attr("title") %>% 
+  stringr::str_extract("[0-5]")
+
+ctReviews = cambodianThaiHTML %>% 
+  html_nodes(".review-wrapper .review-content p") %>% 
+  html_text()
+
+ctData = data.frame(ratings = ctRatings, 
+                    reviews = ctReviews, 
+                    restaurant = "cambodian thai", 
+                    stringsAsFactors = FALSE)
+
+ctData$ratings
+
+###
+
+
+
+```
+
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+
+library(tidytext)
+
+ctData$reviews = tolower(ctData$reviews)
+rowfinder = grep("the food was ", ctData$reviews)
+
+trigrams =  ctData[rowfinder,] %>% 
+  # mutate(lyrics = stringr::str_squish(tm::removeWords(tolower(lyrics), tm::stopwords("SMART")))) %>% 
+  unnest_tokens(., ngrams, reviews, token = "ngrams", n = 3) %>% 
+  tidyr::separate(ngrams, c("word1", "word2","word3"), sep = "\\s") %>% 
+  count(word1, word2, word3, sort = TRUE)
+
+rmarkdown::paged_table(trigrams)
+
+
+ctData$reviews"(?<=the food was )\\w+"
+```
+
+
+
+```{r , echo=FALSE}
+library(ggplot2)
+
+ctData %>% 
+  unnest_tokens(., word, reviews) %>% 
+  count(word, sort = TRUE) %>% 
+  slice(1:30) %>% 
+  mutate(word = factor(word, levels = unique(word))) %>% 
+  ggplot(., aes(word, n)) +  
+  geom_col() + 
+  coord_flip() +
+  theme_minimal()
+```
+
